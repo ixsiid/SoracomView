@@ -246,9 +246,23 @@ class ScatterLineChart extends AbstractChart {
     const datas = this.getDatas(data);
     const baseHeight = this.calcBaseHeight(datas, height);
     data.forEach((dataset, index) => {
+      let xmin = dataset.dataX[0];
+      let xmax = dataset.dataX[0];
+      for (let i = 0; i < dataset.dataX.length; i++) {
+        if (xmin > dataset.dataX[i]) xmin = dataset.dataX[i];
+        if (xmax < dataset.dataX[i]) xmax = dataset.dataX[i];
+      }
+      const xrange = (xmax - xmin) / (dataset.dataX.length - 1) * dataset.dataX.length;
+
+      const calc_x = i => {
+        return Math.floor(
+          paddingRight + ((dataset.dataX[i] - xmin) / xrange * (width - paddingRight))
+        );
+      };
+
       const points = dataset.data.map((d, i) => {
-        const x =
-          (i * (width - paddingRight)) / dataset.data.length + paddingRight;
+
+        const x = calc_x(i);
         const y =
           ((baseHeight - this.calcHeight(d, datas, height)) / 4) * 3 +
           paddingTop;
@@ -277,17 +291,14 @@ class ScatterLineChart extends AbstractChart {
 
     const datas = this.getDatas(data);
 
-    let xmin = -1, xmax = 1;
-    let xrange = 1;
-    if (dataset.dataX.length > 0) {
-      xmin = dataset.dataX[0];
-      xmax = dataset.dataX[0];
-      for (let i = 0; i < dataset.dataX.length; i++) {
-        if (xmin > dataset.dataX[i]) xmin = dataset.dataX[i];
-        if (xmax < dataset.dataX[i]) xmax = dataset.dataX[i];
-      }
-      xrange = (xmax - xmin) / (dataset.dataX.length - 1) * dataset.dataX.length;
+    let xmin = dataset.dataX[0];
+    let xmax = dataset.dataX[0];
+    for (let i = 0; i < dataset.dataX.length; i++) {
+      if (xmin > dataset.dataX[i]) xmin = dataset.dataX[i];
+      if (xmax < dataset.dataX[i]) xmax = dataset.dataX[i];
     }
+    const xrange = (xmax - xmin) / (dataset.dataX.length - 1) * dataset.dataX.length;
+
     const x = i => {
       return Math.floor(
         paddingRight + ((dataset.dataX[i] - xmin) / xrange * (width - paddingRight))
