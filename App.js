@@ -308,7 +308,7 @@ class DateTimeChart extends Component {
 						dataX: data.map(d => d[0]),
 						data: data.map(d => d[1]),
 					}];
-					const label = ["0", "1"];
+					const label = ["0", "1", "2"];
 					this.setState({
 						chart: { label, datasets },
 						lastUpdate: new Date(data[0][0]).toLocaleString(),
@@ -323,6 +323,13 @@ class DateTimeChart extends Component {
 
 		if (!this.timer) {
 			this.timer = setInterval(this.setApiManager.bind(this), 60 * 1000, api);
+		}
+	}
+
+	componentWillUnmount() {
+		if (!this.timer) {
+			clearInterval(this.timer);
+			this.timer = null;
 		}
 	}
 
