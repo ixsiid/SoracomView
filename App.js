@@ -1,13 +1,25 @@
 import React, { Component } from 'react';
-import { StyleSheet, Text, View, AsyncStorage } from 'react-native';
-import { Container, Header, Content, Form, Item, Picker, Icon, Body, Title } from 'native-base';
+import { StyleSheet, Text, View, AsyncStorage, Dimensions, ScrollView } from 'react-native';
+import { Container, Header, Content, Form, Item, Picker, Icon, Body, Title, Subtitle } from 'native-base';
 import { AppLoading } from 'expo';
+import {
+	LineChart,
+	BarChart,
+	PieChart,
+	ProgressChart,
+	ContributionGraph,
+	StackedBarChart
+} from "react-native-chart-kit";
+
+import ScatterLineChart from "./scatter-line-chart";
+
+import { Subscribers } from './components';
 
 const fetch = require('node-fetch');
 
-import { authKeyId, authKey } from './secret';
+import { authKeyId, authKey, resourceId } from './secret';
 
-class ApiComponent extends Component {
+class SoracomApiContainer extends Component {
 	constructor(props) {
 		super(props);
 
@@ -109,10 +121,19 @@ class ApiComponent extends Component {
 			})
 		);
 
+		const title = [<Title key="title">{this.props.title}</Title>];
+		if (this.props.withAuthName) {
+			const authInfo = <AuthorizationInfo ref="info" />
+			title.push(<Subtitle key="subtitle">{authInfo}</Subtitle>);
+		}
+
 		return (
-			<View>
-				{children}
-			</View>
+			<Container>
+				<Header><Body>{title}</Body></Header>
+				<ScrollView>
+					{children}
+				</ScrollView>
+			</Container>
 		);
 	}
 }
@@ -128,58 +149,31 @@ class AuthorizationInfo extends Component {
 			this.setState({ message: `Failed to authenticate` });
 			return;
 		}
-		this.setState({ message: `Authorization by ${api.operatorId}::${api.userName}` });
+		this.setState({ message: `Authorization by ${api.userName} ::${api.operatorId}` });
 	}
 
 	render() {
 		return (
-			<View>
-				<Text>{this.state.message}</Text>
-			</View>
+			<Text>{this.state.message}</Text>
 		);
 	}
 
 }
 
-class Subscribers extends Component {
-	constructor(props) {
-		super(props);
-		this.state = { subscribers: [] };
-	}
-
-	setApiManager(api) {
-		if (!api) return;
-		api.request('/subscribers')
-			.then(json => {
-				this.setState({
-					subscribers: json.map(s => <View key={s.imsi}>
-						<Text>{s.imsi}: {s.type}</Text>
-					</View>)
-				});
-			})
-			.catch(_ => alert(_))
-			.catch(_ => this.setState({
-				subscribers: <Text>Failed to get subscribers</Text>
-			}));
-	}
-
-	render() {
-		return (
-			<View>
-				<Text>Subscribers</Text>
-				{this.state.subscribers}
-			</View>
-		);
-	}
-}
+/*
 
 class Resource extends Component {
 	constructor(props) {
 		super(props);
-		this.state = { resources: [], selected: undefined };
+		this.state = {
+			resources: [], selected: undefined,
+			chart: { label: [], datasets: [{ dataX: [0, 1], data: [-1, 2] }] }
+		};
+		this.api = undefined;
 	}
 
 	setApiManager(api) {
+		this.api = api;
 		if (!api) return;
 		api.request('/data/resources')
 			.then(json => this.setState({
@@ -192,7 +186,27 @@ class Resource extends Component {
 	}
 
 	onValueChange(args) {
-		console.log(args);
+		if (!this.api) return true;
+		this.api.request(`/data/${args.resourceType}/${args.resourceId}?limit=100`)
+			.then(array => {
+				// undefinedの場合もあるかもしれない
+				if (!array.length || array.length < 0) return;
+				array.forEach(d => d.content = JSON.parse(d.content));
+
+				const data = args.attributeNames.map(attr => {
+					const filterd = array.filter(d => attr in d.content);
+					return {
+						dataX: filterd.map(d => d.time),
+						data: filterd.map(d => d.content[attr]),
+						color: (opacity = 1) => `rgba(134, 65, 244, ${opacity})`,
+						strokeWidth: 4,
+					};
+				}).filter(d => d.data.length > 0);
+				console.log({ chart: { label: [], datasets: data, legend: args.attributeNames } });
+				this.setState({ chart: { label: [], datasets: data, legend: ["distance"] } });
+			});
+
+		return true;
 	}
 
 	render() {
@@ -216,8 +230,141 @@ class Resource extends Component {
 							</Picker>
 						</Item>
 					</Form>
+					<ScatterLineChart
+						data={this.state.chart}
+						width={Dimensions.get("window").width} // from react-native
+						height={220}
+						yAxisLabel=""
+						yAxisSuffix=""
+						yAxisInterval={1} // optional, defaults to 1
+						chartConfig={{
+							backgroundColor: "#e26a00",
+							backgroundGradientFrom: "#fb8c00",
+							backgroundGradientTo: "#ffa726",
+							decimalPlaces: 2, // optional, defaults to 2dp
+							color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+							labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+							style: {
+								borderRadius: 16
+							},
+							propsForDots: {
+								r: "6",
+								strokeWidth: "2",
+								stroke: "#ffa726"
+							}
+						}}
+						bezier
+						style={{
+							marginVertical: 8,
+							borderRadius: 16
+						}}
+					/>
 				</Content>
 			</Container>
+		);
+	}
+}
+
+*/
+
+class DateTimeChart extends Component {
+	constructor(props) {
+		super(props);
+		this.state = {
+			chart: {
+				label: [],
+				datasets: [{ dataX: [0, 1], data: [0, 0] }]
+			},
+			title: `${props.resourceAttr} chart :: ${props.resourceId}`,
+			lastUpdate: "undefined",
+		};
+		this.resource = {
+			type: props.resourceType,
+			id: props.resourceId,
+			attribute: props.resourceAttr,
+		};
+		this.timer = null;
+	}
+
+	setApiManager(api) {
+		if (!api) {
+			if (this.timer) clearInterval(this.timer);
+			this.timer = null;
+			return;
+		}
+		api.request(`/data/${this.resource.type}/${this.resource.id}?limit=${this.props.limit ?? 100}`)
+			.then(array => {
+				// undefinedの場合もあるかもしれない
+				if (!array.length || array.length < 0) return;
+				const data = array.map(d => {
+					const content = JSON.parse(d.content);
+					return [d.time, content[this.resource.attribute]];
+				}).filter(x => x[1] != undefined);
+
+				if (data.length > 0) {
+					const datasets = [{
+						color: (opacity = 1) => `rgba(134, 65, 244, ${opacity})`,
+						strokeWidth: 2,
+						dataX: data.map(d => d[0]),
+						data: data.map(d => d[1]),
+					}];
+					const label = [];
+					this.setState({
+						chart: { label, datasets },
+						lastUpdate: new Date(data[0][0]).toLocaleString(),
+					});
+				} else {
+					this.setState({
+						lastUpdate: new Date().toLocaleString() + ' (fetch)',
+					})
+				}
+
+			});
+
+		if (!this.timer) {
+			this.timer = setInterval(this.setApiManager.bind(this), 60 * 1000, api);
+		}
+	}
+
+	onLayout(event) {
+		console.log(event);
+		this.setState({ chartWidth: parseInt(event.nativeEvent.layout.width) });
+	}
+
+	render() {
+		return (
+			<Content style={this.props.style} onLayout={event => this.onLayout(event)}>
+				<Text>{this.state.title}</Text>
+				<ScatterLineChart
+					data={this.state.chart}
+					width={this.state.chartWidth || (Dimensions.get("window").width - 8)} // from react-native
+					height={220}
+					yAxisLabel=""
+					yAxisSuffix=""
+					chartConfig={{
+						backgroundColor: "#e26a00",
+						backgroundGradientFrom: "#fb8c00",
+						backgroundGradientTo: "#ffa726",
+						decimalPlaces: 2, // optional, defaults to 2dp
+						color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+						labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+						style: {
+							borderRadius: 16
+						},
+						propsForDots: {
+							r: "1",
+							strokeWidth: "2",
+							stroke: "#ffa726"
+						}
+					}}
+					bezier
+					style={{
+						marginVertical: 8,
+						borderRadius: 16
+					}}
+				/>
+				<Text style={{ textAlign: "right" }}>Last update by {this.state.lastUpdate}</Text>
+			</Content>
 		);
 	}
 }
@@ -246,14 +393,14 @@ export default class App extends Component {
 		}
 
 		return (
-			<View style={styles.container}>
-				<ApiComponent>
-					<Text>SORACOM Harvest Data Viewer</Text>
-					<AuthorizationInfo />
-					<Subscribers />
-					<Resource />
-				</ApiComponent>
-			</View>
+			<SoracomApiContainer title="SORACOM Harvest Data Viewer" withAuthName>
+				<Subscribers style={{ backgroundColor: '#aaa', margin: 4 }} />
+				<DateTimeChart
+					style={{ backgroundColor: '#eee', margin: 4 }}
+					resourceType="Device"
+					resourceId={resourceId}
+					resourceAttr="distance" />
+			</SoracomApiContainer>
 		);
 	}
 }
