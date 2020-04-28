@@ -308,7 +308,7 @@ class DateTimeChart extends Component {
 						dataX: data.map(d => d[0]),
 						data: data.map(d => d[1]),
 					}];
-					const label = [];
+					const label = ["0", "1"];
 					this.setState({
 						chart: { label, datasets },
 						lastUpdate: new Date(data[0][0]).toLocaleString(),
@@ -327,7 +327,6 @@ class DateTimeChart extends Component {
 	}
 
 	onLayout(event) {
-		console.log(event);
 		this.setState({ chartWidth: parseInt(event.nativeEvent.layout.width) });
 	}
 
@@ -349,7 +348,7 @@ class DateTimeChart extends Component {
 						color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
 						labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
 						style: {
-							borderRadius: 16
+							borderRadius: 4
 						},
 						propsForDots: {
 							r: "1",

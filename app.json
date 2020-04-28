@@ -2,6 +2,7 @@
   "expo": {
     "name": "SORACOM Harvest Data Viewer",
     "slug": "soraview",
+    "privacy": "unlisted",
     "platforms": [
       "ios",
       "android"
@@ -21,7 +22,12 @@
       "**/*"
     ],
     "ios": {
+      "bundleIdentifier": "net.halzion.soraview",
       "supportsTablet": true
-    }
+    },
+    "android": {
+      "package": "net.halzion.soraview"
+    },
+    "description": ""
   }
 }

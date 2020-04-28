@@ -122,3 +122,6 @@ web-report/
 .vscode/c_cpp_properties.json
 
 secret.js
+
+build.cmd
+
