@@ -1,5 +1,5 @@
 import React, { Component } from 'react';
-import { StyleSheet, Text, View, AsyncStorage, Dimensions, ScrollView } from 'react-native';
+import { StyleSheet, Text, Button, AsyncStorage, Dimensions, ScrollView } from 'react-native';
 import { Container, Header, Content, Form, Item, Picker, Icon, Body, Title, Subtitle } from 'native-base';
 import { AppLoading } from 'expo';
 import {
@@ -18,6 +18,13 @@ import { Subscribers } from './components';
 const fetch = require('node-fetch');
 
 import { authKeyId, authKey, resourceId } from './secret';
+
+const SoracomError = function () {
+
+};
+SoracomError.isApiKeyError = code => {
+	return ['AGW0002', 'AUM0013'].indexOf(code) >= 0;
+};
 
 class SoracomApiContainer extends Component {
 	constructor(props) {
@@ -42,60 +49,82 @@ class SoracomApiContainer extends Component {
 			};
 			if (method == 'POST' || method == 'PUT') option.body = JSON.stringify(payload);
 			return fetch(`https://api.soracom.io/v1${path}`, option)
-				.then(res => res.json())
-				.then(json => {
-					if (json.code === 'AGW0002') {
-						if (++retry > 2) throw `Error: cannot authorization`;
-						return this.getApiKey().then(_ => this.request(path, method, payload));
+				.then(res => {
+					if (res.status < 200 || res.status >= 300) throw { status: res.status, request: { path, method }, code: undefined };
+
+					return { json: res.json(), response: res };
+				})
+				.then(({ json, response }) => {
+					if (++retry > 2) throw { status: response.status, request: { path, method }, code: json.code };
+
+					if (SoracomError.isApiKeyError(json.code)) {
+						return this.getApiKey(true).then(_ => this.request(path, method, payload));
 					}
-					if ('code' in json) throw `[${json.code}] ${json.message}`;
+
+					if ('code' in json) throw { status: response.status, request: { path, method }, code: json.code };
 					retry = 0;
+
+					//					alert(`${path}: ${JSON.stringify(json)} [${JSON.stringify(response)}]`);
 					return json;
 				});
 		}
 	}
 
-	getApiKey() {
-		console.log('Call getApiKey');
-		return fetch('https://api.soracom.io/v1/auth', {
+	getApiKey(force = false) {
+		const getNewApiKey = () => fetch('https://api.soracom.io/v1/auth', {
 			method: 'POST',
 			headers: {
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify({ authKeyId, authKey })
 		})
-			.then(res => res.json())
-			.then(json => {
-				if (json.code) {
-					const message = `[${json.code}] ${json.message}`;
-					alert(message);
-					throw message;
-				}
-				return json;
-			});
-	}
+			.then(res => ({ json: res.json(), response: res }))
+			.then(({ json, response }) => {
+				if (response.status < 200 || res.status >= 300) throw {
+					status: response.status,
+					request: { path: '/auth', method: 'GET' },
+					code: json.code
+				};
 
-	componentDidMount() {
-		AsyncStorage.getItem('@api:info')
+				if (json.code) throw {
+					status: response.status,
+					request: { path: '/auth', method: 'GET' },
+					code: json.code
+				};
+
+				this.apiManager = json;
+				return {
+					store: AsyncStorage.setItem('@api:info', JSON.stringify(json)),
+					api: json
+				};
+			})
+			.then(({ store, api }) => api);
+
+		if (force) return getNewApiKey();
+
+		return AsyncStorage.getItem('@api:info')
 			.then(text => {
-				if (text == null) return this.getApiKey();
+				if (text == null) return getNewApiKey(true);
 
 				const stored = JSON.parse(text);
 				if (['userName', 'operatorId', 'apiKey', 'token'].find(x => !(x in stored))) {
 					// 保存されたデータにキーが足らない
-					return this.getApiKey();
+					return getNewApiKey(true);
 				}
 
 				// ユーザー情報をリクエストして、有効期限確認
 				return this.request(`/operators/${stored.operatorId}/users/${stored.userName}`
 					, 'GET', undefined, stored.apiKey, stored.token)
-					.then(json => {
-						return json.code === 'AGW0002' ? this.getApiKey() : stored;
-					});
-			})
+					.then(_ => AsyncStorage.getItem('@api:info'))
+					.then(text => JSON.parse(text));
+			});
+	}
+
+	componentDidMount() {
+		this.getApiKey()
 			.then(api => {
-				this.apiManager = api;
-				AsyncStorage.setItem('@api:info', JSON.stringify(this.apiManager));
+				alert('call child');
+				alert(this.refs.length);
 				Object.entries(this.refs)
 					.filter(([k, v]) => v.setApiManager)
 					.forEach(([k, v]) => {
@@ -107,11 +136,11 @@ class SoracomApiContainer extends Component {
 							})
 						} catch (e) {
 							console.log(e);
-							alert(e);
+							timeoutThrow(e);
 						}
 					});
 			})
-			.catch(_ => console.log(_));
+			.catch(_ => alert(JSON.stringify(_)));
 	}
 
 	render() {
@@ -322,7 +351,7 @@ class DateTimeChart extends Component {
 			});
 
 		if (!this.timer) {
-			this.timer = setInterval(this.setApiManager.bind(this), 60 * 1000, api);
+			//			this.timer = setInterval(this.setApiManager.bind(this), 60 * 1000, api);
 		}
 	}
 
@@ -389,6 +418,19 @@ export default class App extends Component {
 		});
 	}
 
+	click() {
+		alert('click');
+		AsyncStorage.getItem('@api:info').
+			then(a => {
+				const api = JSON.parse(a);
+				api.token = 'abcdefg';
+				return AsyncStorage.setItem('@api:info', JSON.stringify(api));
+			})
+			.then(_ => alert('rewrited'))
+			.catch(_ => alert('rewrite error'));
+		//		AsyncStorage.setItem('@api:info', JSON.stringify(this.apiManager));
+	}
+
 	render() {
 		if (!this.state.ready) {
 			return <AppLoading
@@ -406,6 +448,7 @@ export default class App extends Component {
 					resourceType="Device"
 					resourceId={resourceId}
 					resourceAttr="distance" />
+				<Button onPress={() => this.click()} title="aaaaa"></Button>
 			</SoracomApiContainer>
 		);
 	}

@@ -19,10 +19,11 @@ class Subscribers extends Component {
 					subscribers: json.map(s => `${s.imsi}: ${s.type}`)
 				});
 			})
-			.catch(_ => alert(_))
-			.catch(_ => this.setState({
-				subscribers: ['Failed to get subscribers']
-			}));
+			.catch(_ => console.log(_));
+//			.catch(_ => alert(_))
+//			.catch(_ => this.setState({
+//				subscribers: ['Failed to get subscribers']
+//			}));
 	}
 
 	render() {
